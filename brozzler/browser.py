@@ -413,8 +413,10 @@ class Browser:
                 )
             brozzler.sleep(self._wait_interval)
 
-    def send_to_chrome(self, suppress_logging=False, **kwargs):
+    def send_to_chrome(self, suppress_logging=False, expect_result=False, **kwargs):
         msg_id = next(self._command_id)
+        if expect_result:
+            self.websock_thread.expect_result(msg_id)
         kwargs["id"] = msg_id
         msg = json.dumps(kwargs, separators=(",", ":"))
         self.logger.debug(
@@ -756,10 +758,11 @@ class Browser:
                 params={"downloadThroughput": download_throughput},
             )
         if stealth:
-            self.websock_thread.expect_result(self._command_id.peek())
             js = brozzler.jinja2_environment().get_template("stealth.js").render()
             msg_id = self.send_to_chrome(
-                method="Page.addScriptToEvaluateOnNewDocument", params={"source": js}
+                method="Page.addScriptToEvaluateOnNewDocument",
+                params={"source": js},
+                expect_result=True,
             )
             self._wait_for(
                 lambda: self.websock_thread.received_result(msg_id), timeout=10
@@ -773,13 +776,13 @@ class Browser:
         self._wait_for(lambda: self.websock_thread.got_page_load_event, timeout=timeout)
 
     def inject_outlink_extractor(self, timeout=60):
-        self.websock_thread.expect_result(self._command_id.peek())
         js = brozzler.jinja2_environment().get_template("extract-outlinks.js").render()
         # This defines the method but doesn't extract outlinks yet
         msg_id = self.send_to_chrome(
             method="Runtime.evaluate",
             suppress_logging=True,
             params={"expression": js},
+            expect_result=True,
         )
         self._wait_for(
             lambda: self.websock_thread.received_result(msg_id), timeout=timeout
@@ -791,7 +794,6 @@ class Browser:
         # Define the outlink extractor first before extracting
         self.inject_outlink_extractor(timeout=timeout)
 
-        self.websock_thread.expect_result(self._command_id.peek())
         # Now we actually do outlink extraction
         msg_id = self.send_to_chrome(
             method="Runtime.evaluate",
@@ -800,6 +802,7 @@ class Browser:
                 # returnByValue ensures we can receive an array response
                 "returnByValue": True,
             },
+            expect_result=True,
         )
         self._wait_for(
             lambda: self.websock_thread.received_result(msg_id), timeout=timeout
@@ -833,8 +836,9 @@ class Browser:
         """
         self.logger.info("taking screenshot")
         if full_page:
-            self.websock_thread.expect_result(self._command_id.peek())
-            msg_id = self.send_to_chrome(method="Page.getLayoutMetrics")
+            msg_id = self.send_to_chrome(
+                method="Page.getLayoutMetrics", expect_result=True
+            )
             self._wait_for(
                 lambda: self.websock_thread.received_result(msg_id), timeout=timeout
             )
@@ -861,9 +865,8 @@ class Browser:
             capture_params = {"format": "jpeg", "quality": 95, "clip": clip}
         else:
             capture_params = {"format": "jpeg", "quality": 95}
-        self.websock_thread.expect_result(self._command_id.peek())
         msg_id = self.send_to_chrome(
-            method="Page.captureScreenshot", params=capture_params
+            method="Page.captureScreenshot", params=capture_params, expect_result=True
         )
         self._wait_for(
             lambda: self.websock_thread.received_result(msg_id), timeout=timeout
@@ -876,9 +879,10 @@ class Browser:
         """
         Returns value of document.URL from the browser.
         """
-        self.websock_thread.expect_result(self._command_id.peek())
         msg_id = self.send_to_chrome(
-            method="Runtime.evaluate", params={"expression": "document.URL"}
+            method="Runtime.evaluate",
+            params={"expression": "document.URL"},
+            expect_result=True,
         )
         self._wait_for(
             lambda: self.websock_thread.received_result(msg_id), timeout=timeout
@@ -906,7 +910,6 @@ class Browser:
 
             brozzler.sleep(check_interval)
 
-            self.websock_thread.expect_result(self._command_id.peek())
             msg_id = self.send_to_chrome(
                 method="Runtime.evaluate",
                 suppress_logging=True,
@@ -915,6 +918,7 @@ class Browser:
                     # returnByValue ensures we can return more complicated types like dicts
                     "returnByValue": True,
                 },
+                expect_result=True,
             )
             try:
                 self._wait_for(
@@ -965,12 +969,12 @@ class Browser:
         # wait for tryLogin to finish trying (should be very very quick)
         start = time.time()
         while True:
-            self.websock_thread.expect_result(self._command_id.peek())
             msg_id = self.send_to_chrome(
                 method="Runtime.evaluate",
                 params={
                     "expression": 'try { __brzl_tryLoginState } catch (e) { "maybe-submitted-form" }'
                 },
+                expect_result=True,
             )
             try:
                 self._wait_for(
@@ -1013,6 +1017,3 @@ class Counter:
             return self.next_value
         finally:
             self.next_value += 1
-
-    def peek(self):
-        return self.next_value
