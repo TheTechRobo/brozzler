@@ -622,6 +622,9 @@ class Browser:
                             "login navigated away; returning!", page_url=page_url
                         )
                         self.navigate_to_page(page_url, timeout=page_timeout)
+                    # allow time for any additional redirects or scripts to run after login
+                    time.sleep(10)
+                    self._wait_for_idle(idle_time=5, timeout=4)
                 # If the target page HTTP status is 4xx/5xx, there is no point
                 # in running behaviors, screenshot, outlink and hashtag
                 # extraction as we didn't get a valid page.
@@ -951,6 +954,10 @@ class Browser:
             .get_template("try-login.js.j2")
             .render(username=username, password=password)
         )
+
+        self.logger.info("trying to login")
+        time.sleep(1)  # allow time for any scripts to run
+        self._wait_for_idle(idle_time=2, timeout=4)
 
         self.websock_thread.got_page_load_event = None
         self.send_to_chrome(
